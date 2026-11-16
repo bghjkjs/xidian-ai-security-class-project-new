@@ -30,3 +30,4 @@ research_agent/.env
 research_agent/*_tmp/*
 
 .env
+cpu_experiment_results/
