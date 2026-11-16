@@ -134,7 +134,7 @@ def verify_claims(payload, manifest, metrics):
         elif (not isinstance(claim["detector"], str) or not isinstance(claim["metric"], str)
               or claim["detector"] not in DETECTORS or claim["metric"] not in METRICS):
             reason = "unsupported_detector_or_metric"
-        elif type(claim["value"]) not in (int, float) or not math.isfinite(claim["value"]):
+        elif type(claim["value"]) not in (int, float) or not 0 <= claim["value"] <= 1:
             reason = "invalid_numeric_value"
         elif not math.isclose(claim["value"], metrics["detectors"][claim["detector"]][claim["metric"]],
                               rel_tol=0, abs_tol=1e-12):

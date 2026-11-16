@@ -73,7 +73,7 @@ class IntegrityTests(unittest.TestCase):
             {"run_id": "other-run"}, {"manifest_sha256": "0" * 64},
             {"scope": "all_real_papers"}, {"metric": "statistical_significance"},
             {"detector": "unknown"}, {"value": float("nan")}, {"value": True},
-            {"value": "0.6"}, {"metric": []}, {"detector": {}},
+            {"value": "0.6"}, {"value": 10 ** 500}, {"metric": []}, {"detector": {}},
             {"comment": "F1 为 1.000，所有真实论文均有效"},
         ]
         for mutation in mutations:
