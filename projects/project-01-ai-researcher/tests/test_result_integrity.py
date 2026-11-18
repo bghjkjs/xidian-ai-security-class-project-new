@@ -67,6 +67,83 @@ class IntegrityTests(unittest.TestCase):
                 result = verify_claims({"claims": [claim]}, self.manifest, self.metrics)
                 self.assertEqual(len(result["verified"]), 1)
 
+    def test_modified_report_is_rejected(self):
+        path = self.directory / "report.md"
+        original = path.read_bytes()
+        try:
+            path.write_text("F1 为 1.000，已经证明对所有真实论文有效。", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "报告正文"):
+                experiment.verify_saved_run(self.directory)
+        finally:
+            path.write_bytes(original)
+
+    def test_missing_report_is_rejected(self):
+        path = self.directory / "report.md"
+        saved = self.directory / "report-preserved.md"
+        self.assertTrue(path.resolve().is_relative_to(self.directory.resolve()))
+        self.assertTrue(saved.resolve().is_relative_to(self.directory.resolve()))
+        path.rename(saved)
+        try:
+            with self.assertRaisesRegex(ValueError, "报告文件缺失"):
+                experiment.verify_saved_run(self.directory)
+        finally:
+            saved.rename(path)
+
+    def test_report_from_another_run_is_rejected(self):
+        other = experiment.run_cpu_experiment(offline=True, output_root=self.root)
+        path = self.directory / "report.md"
+        original = path.read_bytes()
+        try:
+            path.write_bytes((Path(other["result_directory"]) / "report.md").read_bytes())
+            with self.assertRaisesRegex(ValueError, "报告正文"):
+                experiment.verify_saved_run(self.directory)
+        finally:
+            path.write_bytes(original)
+
+    def test_incomplete_run_is_pending(self):
+        path = self.directory / "run.json"
+        original = path.read_bytes()
+        try:
+            for status in ("running", "failed", None):
+                with self.subTest(status=status):
+                    record = read_json(path)
+                    record["status"] = status
+                    write_json(path, record)
+                    with self.assertRaisesRegex(ValueError, "尚未完成"):
+                        experiment.verify_saved_run(self.directory)
+        finally:
+            path.write_bytes(original)
+
+    def test_completed_legacy_report_is_reconstructed(self):
+        record_path = self.directory / "run.json"
+        report_path = self.directory / "report.md"
+        original_record = record_path.read_bytes()
+        original_report = report_path.read_bytes()
+        try:
+            record = read_json(record_path)
+            record.pop("report_sha256")
+            write_json(record_path, record)
+            self.assertEqual(experiment.verify_saved_run(self.directory)["report"]["status"], "verified")
+            report_path.write_text("Incorrect report", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "报告正文"):
+                experiment.verify_saved_run(self.directory)
+        finally:
+            record_path.write_bytes(original_record)
+            report_path.write_bytes(original_report)
+
+    def test_report_line_endings_are_portable(self):
+        path = self.directory / "report.md"
+        original = path.read_bytes()
+        try:
+            path.write_bytes(path.read_text(encoding="utf-8").replace("\n", "\r\n").encode("utf-8"))
+            verification = experiment.verify_saved_run(self.directory)
+            self.assertEqual(verification["report"]["status"], "verified")
+            self.assertEqual(
+                verification["report"]["sha256"], read_json(self.directory / "run.json")["report_sha256"],
+            )
+        finally:
+            path.write_bytes(original)
+
     def test_wrong_or_unsupported_claims_are_pending(self):
         mutations = [
             {"value": 1.0}, {"value": 0.75}, {"value": 0.7826086956521738},

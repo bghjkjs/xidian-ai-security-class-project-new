@@ -121,12 +121,26 @@ def verify_saved_run(directory):
         raise ValueError("该结果缺少 manifest.json，来源核验状态为待核验")
     manifest = read_json(directory / "manifest.json")
     record = read_json(directory / "run.json")
+    if record.get("status") != "completed":
+        raise ValueError("该运行尚未完成，结果待核验")
     if (record.get("run_id") != manifest.get("run_id")
             or record.get("manifest_sha256") != sha256(canonical_json(manifest).encode("utf-8"))):
         raise ValueError("运行记录与来源记录不一致")
     metrics, evaluation = _replay(directory, manifest, manifest["run_id"])
     raw_claims = (directory / "model_claims.txt").read_text(encoding="utf-8")
-    return {"evaluation": evaluation, "claims": _check_claims(raw_claims, manifest, metrics)}
+    verification = {"evaluation": evaluation, "claims": _check_claims(raw_claims, manifest, metrics)}
+    report_path = directory / "report.md"
+    if not report_path.is_file():
+        raise ValueError("报告文件缺失，结果待核验")
+    report_digest = sha256(report_path.read_text(encoding="utf-8").encode("utf-8"))
+    expected_digest = record.get("report_sha256")
+    if expected_digest is None:
+        # Earlier completed runs can be checked against the deterministic renderer.
+        expected_digest = sha256(render_report(metrics, manifest, verification).encode("utf-8"))
+    if report_digest != expected_digest:
+        raise ValueError("报告正文与已验证结果不一致，结果待核验")
+    verification["report"] = {"status": "verified", "sha256": report_digest}
+    return verification
 
 
 def run_cpu_experiment(question=CPU_QUESTION, reference="", *, offline=False, output_root=None):
@@ -214,8 +228,12 @@ def run_cpu_experiment(question=CPU_QUESTION, reference="", *, offline=False, ou
         write_json(result_directory / "verification.json", verification)
         report = render_report(metrics, manifest, verification)
         (result_directory / "report.md").write_text(report, encoding="utf-8")
+        report_digest = sha256(report.encode("utf-8"))
+        verification["report"] = {"status": "verified", "sha256": report_digest}
+        write_json(result_directory / "verification.json", verification)
         record.update(
             status="completed", stage="completed", elapsed_seconds=time.monotonic() - started,
+            report_sha256=report_digest,
             token_info=usage, claims_verified=len(verification["claims"]["verified"]),
             claims_review_required=len(verification["claims"]["review_required"]),
         )
