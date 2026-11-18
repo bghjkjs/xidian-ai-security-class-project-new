@@ -33,6 +33,10 @@ def get_args_paper():
     return args
 
 def main_ai_researcher(input, reference, mode):
+    if mode == "CPU Small Experiment":
+        from research_agent.cpu_experiment import run_cpu_experiment
+        return run_cpu_experiment(input, reference)
+
     # if main_autoagent.mode is None:
     #     main_autoagent.mode = mode
         

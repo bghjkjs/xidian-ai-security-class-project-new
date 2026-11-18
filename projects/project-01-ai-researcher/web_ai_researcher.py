@@ -17,10 +17,8 @@ import base64
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
-# If you want to use proxy, please uncomment the following lines
-os.environ['https_proxy'] = 'http://100.68.161.73:3128'
-os.environ['http_proxy'] = 'http://100.68.161.73:3128'
-os.environ['no_proxy'] = 'localhost,127.0.0.1,0.0.0.0'
+# Respect the user's proxy configuration for model API requests.
+os.environ.setdefault('no_proxy', 'localhost,127.0.0.1,0.0.0.0')
 
 def setup_path():
     # logs_dir = os.path.join("casestudy_results", f'agent_{container_name}', 'logs')
@@ -451,6 +449,7 @@ def get_latest_logs(max_lines=500, state=None, queue_source=None, last_index=0):
 
 # Dictionary containing module descriptions
 MODULE_DESCRIPTIONS = {
+    "CPU Small Experiment": "CPU 提示注入实验。固定评估输入、独立复算指标，并验证数值结论的实验来源。",
     "Detailed Idea Description": "At this level, users provide comprehensive descriptions of their specific research ideas. The system processes these detailed inputs to develop implementation strategies based on the user's explicit requirements. Examples 1-2 are the templates of this mode.",
     "Reference-Based Ideation": "This simpler level involves users submitting reference papers without a specific idea in mind. The user query typically follows the format: "'"I have some reference papers, please come up with an innovative idea and implement it with these papers."'" The system then analyzes the provided references to generate and develop novel research concepts. Examples 3-4 are the templates of this mode.",
     "Paper Generation Agent": "Once all research and experimental work is finished, employ this agent for paper generation",
@@ -550,6 +549,9 @@ def run_ai_researcher(question: str, reference: str, example_module: str) -> Tup
             )
 
         token_info = None
+        if isinstance(answer, dict):
+            token_info = answer.get("token_info")
+            answer = answer.get("answer", "")
         if not isinstance(token_info, dict):
             token_info = {}
 
@@ -1015,8 +1017,12 @@ def create_ui():
             # 过滤空内容的对话记录
             filtered_logs = filter_empty_conversations(logs2)
 
+            if module_name == "CPU Small Experiment" and isinstance(answer, str) and answer.strip():
+                state.append((question, answer))
+                filtered_logs = filter_empty_conversations(state)
+
             # 根据状态设置不同的指示器
-            if "错误" in status:
+            if status.startswith("❌") or "错误" in status:
                 status_with_indicator = (
                     f"<span class='status-indicator status-error'></span> {status}"
                 )
@@ -1025,7 +1031,7 @@ def create_ui():
                     f"<span class='status-indicator status-success'></span> {status}"
                 )
 
-            yield token_count, status_with_indicator, filtered_logs, scroll_script, updated_index
+            yield state, status_with_indicator, filtered_logs, scroll_script, updated_index
             # yield token_count, status_with_indicator, logs2
         else:
             logs2, updated_index = get_latest_logs(500, state, LOG_QUEUE, last_index)

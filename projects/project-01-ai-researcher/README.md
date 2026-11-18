@@ -67,6 +67,46 @@ python web_ai_researcher.py
 
 工作区和缓存位置受 `.env` 中 `WORKPLACE_NAME`、`DOCKER_WORKPLACE_NAME`、`CACHE_PATH` 等设置影响，查看任务日志中的实际路径。`examples/` 是上游示例，不是本次运行结果。
 
+### CPU 实验与结果完整性核验
+
+在网页的 Select Mode 中选择 **CPU Small Experiment**，填写研究问题后运行。模型依据 8 条开发样本设计正则，容器评估 24 条固定测试样本，主机独立进程复算逐条预测与指标，再核验模型提交的数值陈述。
+
+在线模式使用现有的 LiteLLM、python-dotenv 和 Docker。配置 COMPLETION_MODEL，并提供 OPENROUTER_API_KEY 与 OPENROUTER_API_BASE，或 OPENAI_API_KEY 与 API_BASE_URL。BASE_IMAGES 使用含 Python 的现有实验镜像，默认 tjbtech1/airesearcher:v1，运行前完成镜像拉取。
+
+从本项目目录可以直接完成零 API 调用的离线演示，仅需 Python 3.11 或更高版本。
+
+~~~powershell
+python -m research_agent.cpu_experiment --offline
+~~~
+
+离线模式使用人工构造的规范化关键词对照，初次评估与复算均通过有超时限制的独立本机进程完成。网页入口和在线命令使用模型设计规则及 Docker 初次评估。
+
+~~~powershell
+python -m research_agent.cpu_experiment
+python -m research_agent.cpu_experiment --verify "cpu_experiment_results/替换为运行编号"
+python -m unittest discover -s tests -p test_result_integrity.py -v
+~~~
+
+每轮结果保存在 cpu_experiment_results/<运行编号>/。
+
+- inputs/ 保存固定测试数据、规则和评估器副本。
+- manifest.json 保存运行编号、适用范围及输入 SHA-256 摘要。
+- evaluation/ 保存初次评估指标与逐条预测。
+- model_plan.txt 和 model_claims.txt 保存模型原始回复，离线模式记录人工对照输入。
+- verification.json 保存复算结果及每条数值陈述的验证状态。
+- report.md 使用已验证数据和固定模板生成。
+- run.json 保存运行阶段、状态、模型调用 token 统计、来源记录摘要及报告正文摘要。
+
+数值陈述绑定运行编号、来源记录摘要、评估范围、方法和指标。指标被改写、预测缺失或与复算不一致时，运行会记录失败并停止生成报告。数值错误、跨运行引用和证据不足的陈述记录为待核验，报告展示待核验数量，原始内容保存在回复工件中。JSON 重复字段、非有限数值和额外自由文本字段会受到检查。
+
+在线评估容器只读挂载 inputs/，仅获准写入 evaluation/，禁用网络并限制 CPU、内存和进程数量。来源记录及报告由主机进程保存，独立复算使用当前可信评估器版本。复核历史结果需要匹配的评估器源码，缺少 manifest.json 的旧记录会提示待核验。
+
+历史复核还会检查运行完成状态及报告正文摘要，识别报告缺失、正文修改和跨运行替换。正文摘要统一 LF/CRLF 换行，以支持跨平台保存。早期完成记录缺少报告摘要时，使用当前确定性模板重建报告进行核对，无法对应的历史报告提示待核验。
+
+可信边界包含主机源码、来源记录和运行记录。SHA-256 用于身份与完整性检查，其有效性依赖这些可信记录受到保护。当前实现覆盖 CPU 实验中的结构化数值结论，完整论文流程的科学解释和统计判断仍需进一步验证。
+
+固定演示集上的结果用于检查流程和报告一致性。真实提示注入攻击成功率、正常任务完成率与泛化效果需要额外的端到端实验。相关工作已讨论科研系统的方法学失败及数值归因问题，本功能探索项目中的发布前校验和独立复算。[方法学审计](https://arxiv.org/abs/2509.08713) · [数值溯源](https://arxiv.org/abs/2610.38691)
+
 ## 5. 停止与常见问题
 
 在启动终端按 Ctrl+C 停止网页程序；实验容器可能继续运行，可用 `docker ps` 检查，只停止属于本次任务的容器。
